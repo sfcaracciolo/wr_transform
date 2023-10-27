@@ -1,3 +1,4 @@
+# type: ignore
 from typing import Literal, TypedDict
 import scipy as sp 
 import numpy as np 
@@ -9,6 +10,29 @@ class TransformParameters(TypedDict):
     T: float
     W: float
     D: float
+    
+    @staticmethod
+    def kT(p1=.8, p2=.4):
+        z = lambda x: -np.log(-sp.special.lambertw(-x/np.e).real )
+        f = lambda x:  np.exp(1.-x-np.exp(-x))
+        return TransformParameters.k(f, (z(p1), z(p2)))
+    
+    @staticmethod
+    def kP(p1=.9, p2=.1):
+        z = lambda x: np.sqrt(-np.log(x))
+        f = lambda x:  np.exp(- x**2 )
+        return TransformParameters.k(f, (z(p1), z(p2)))
+    
+    @staticmethod
+    def k(f, lims):
+        q = lambda i,j: sp.integrate.quad(lambda z: z**i*f(z)**j, *lims)[0]
+
+        q00, q01 = q(0, 0), q(0, 1)
+        q10, q11 = q(1, 0), q(1, 1)
+        q20 = q(2, 0)
+
+        b = (q11*q10 - q01*q20) / (q00*q20 - q10**2)
+        return  b*q20 / (q11 + b*q10)
     
 class TransformModel:
     def __init__(self, K: TransformParameters, model) -> None:
