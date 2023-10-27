@@ -1,0 +1,10 @@
+Scripts
+__pycache__
+share
+etc
+Include
+Lib
+*.csv
+*.mat
+pyvenv.cfg
+.python-version

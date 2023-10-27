@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wr_transform"
+version = "0.0.1"
+authors = [
+  { name="Santiago Federico Caracciolo", email="santiago.caracciolo@gmail.com" },
+]
+description = "Transforms to compute features of ECGSYN from ECG measurements of Wistar Rats."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+  "scipy"
+]
