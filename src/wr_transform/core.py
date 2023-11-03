@@ -10,21 +10,28 @@ class TransformParameters(TypedDict):
     T: float
     W: float
     D: float
+    J: float
     
     @staticmethod
     def kT(p1=.8, p2=.4):
-        z = lambda x: -np.log(-sp.special.lambertw(-x/np.e).real )
+        z = lambda x: -np.log(-sp.special.lambertw(-x/np.e, k=0).real )
         f = lambda x:  np.exp(1.-x-np.exp(-x))
-        return TransformParameters.k(f, (z(p1), z(p2)))
+        b, m = TransformParameters.linreg(f, (z(p1), z(p2)))
+        return b/m
     
     @staticmethod
     def kP(p1=.9, p2=.1):
         z = lambda x: np.sqrt(-np.log(x))
-        f = lambda x:  np.exp(- x**2 )
-        return TransformParameters.k(f, (z(p1), z(p2)))
-    
+        f = lambda x: np.exp(- x**2 )
+        b, m = TransformParameters.linreg(f, (z(p1), z(p2)))
+        return b/m
+        
     @staticmethod
-    def k(f, lims):
+    def kJ():
+        return -np.log((3+np.sqrt(5))/2.)
+
+    @staticmethod
+    def linreg(f, lims):
         q = lambda i,j: sp.integrate.quad(lambda z: z**i*f(z)**j, *lims)[0]
 
         q00, q01 = q(0, 0), q(0, 1)
@@ -32,7 +39,8 @@ class TransformParameters(TypedDict):
         q20 = q(2, 0)
 
         b = (q11*q10 - q01*q20) / (q00*q20 - q10**2)
-        return  b*q20 / (q11 + b*q10)
+        m = (q11 + b*q10) / q20
+        return  b, m
     
 class TransformModel:
     def __init__(self, K: TransformParameters, model) -> None:
@@ -41,34 +49,29 @@ class TransformModel:
         temporal measurements in [rad]
         """
 
-        self.F1 = TransformModel._F1(K)
-        self.F2 = TransformModel._F2()
-        self.F3 = model # model(x, fea)
-        self.TF1 = TransformModel._TF1(K)
-        self.Ft = self.F2 @ self.TF1 # temporal fiducials to temporal measurements. shape (4, 8)
-        self.R = TransformModel._R(K)
-        self.FtR = sp.sparse.vstack([self.Ft, self.R]).todense() # uP sP uR sR uS sS uT sT -> P duration, PR, RS complex, QT, 0, 0, 0, pi
+        self.F = TransformModel._F(K)
+        self.M = TransformModel._M()
+        self.f = model # model(x, θ)
+        Ft = TransformModel._Ft(K, self.M)
+        self.invFt = np.linalg.inv(Ft)
 
-    def forward(self, fea):
-        _, fea_t = self.split(fea, 'features')
-        fid = self.F1 @ fea_t
-        fid_a, fid_t = self.split(fid, 'fiducials')
-        mea_t = self.F2 @ fid_t
-        mea_a = self.F3(fid_a, fea)
-        return self.join(mea_a, mea_t, 'measurements') 
+    def forward(self, θ):
+        _, θt = self.split(θ, 'features')
+        ϕ = self.F @ θt
+        ϕa, ϕt = self.split(ϕ, 'fiducials')
+        ψt = self.M @ ϕt
+        ψa = self.f(ϕa, θ)
+        return self.join(ψa, ψt, 'measurements') 
 
-    def inverse(self, mea):
-        mea_a, mea_t = self.split(mea, 'measurements') 
-        fea_t = self.invFtR(mea_t)
-        fea_a = self.invF3(fea_t, x0=mea_a)
-        return self.join(fea_a, fea_t, 'features')
+    def inverse(self, ψ):
+        ψa, ψt = self.split(ψ, 'measurements') 
+        b = np.append(ψt, values=(0,0,0,np.pi))
+        θt = np.ravel(self.invFt @ b)
+        θa = self.g(θt, x0=ψa)
+        return self.join(θa, θt, 'features')
 
-    def invFtR(self, mea_t):
-        b = np.append(mea_t, values=(0,0,0,np.pi))
-        return sp.linalg.solve(self.FtR, b)
-    
-    def invF3(self, fea_t, x0):
-        f = lambda fea_a: self.F3(fea_t[::2], self.join(fea_a, fea_t, type='features')) - x0
+    def g(self, θt, x0):
+        f = lambda x: self.f(θt[::2], self.join(x, θt, type='features')) - x0
         return sp.optimize.broyden1(f, x0)
 
     def split(self, v: np.ndarray, type: Literal['features', 'fiducials', 'measurements']):
@@ -82,7 +85,7 @@ class TransformModel:
         return v
         
     @staticmethod
-    def _F1(K: TransformParameters):
+    def _F(K: TransformParameters):
         """
         temporal features to fiducial points
 
@@ -102,7 +105,7 @@ class TransformModel:
         return T
 
     @staticmethod
-    def _F2():
+    def _M():
         """
         temporal fiducial points to temporal measurements
 
@@ -117,9 +120,9 @@ class TransformModel:
         return T
 
     @staticmethod
-    def _TF1(K: TransformParameters):
+    def _SF(K: TransformParameters):
         """
-        remove rows of F1 to select temporal fiducials from fiducials
+        remove rows of F to select temporal fiducials from fiducials
 
         uP sP uR sR uS sS uT sT -> Pon Poff RSon J Toff
 
@@ -140,6 +143,12 @@ class TransformModel:
         T = sp.sparse.dok_array((4, 8))
         T[0,3], T[0,5] = 1, -K['W']
         T[1,2], T[1,3], T[1,4] = 1, K['D'], -1
-        T[2,4], T[2,5], T[2,6], T[2,7] = 1, K['S'], -1, (3-np.sqrt(5))/2.
+        T[2,4], T[2,5], T[2,6], T[2,7] = 1, K['S'], -1, -K['J']
         T[3,2] = 1
         return T 
+
+    @staticmethod
+    def _Ft(K: TransformParameters, M):
+        SF = TransformModel._SF(K)
+        R = TransformModel._R(K)
+        return sp.sparse.vstack([M @ SF, R]).todense()
