@@ -71,12 +71,16 @@ class TransformModel:
         return self.join(θa, θt, 'features')
 
     def g(self, θt, x0):
+        if np.allclose(x0, 0.): return x0
         f = lambda x: self.f(θt[::2], self.join(x, θt, type='features')) - x0
         return sp.optimize.broyden1(f, x0)
 
     def split(self, v: np.ndarray, type: Literal['features', 'fiducials', 'measurements']):
         if type == 'measurements':
             v_a, v_t = v[[4,6,7,8]], v[:4] # 5 is Qpeak
+        elif type == 'features':
+            v_a, v_t = v[::3], v[[1,2,4,5,7,8,10,11]]
+
         return v_a, v_t
     
     def join(self, v_a: np.ndarray, v_t: np.ndarray, type: Literal['features', 'fiducials', 'measurements']):
