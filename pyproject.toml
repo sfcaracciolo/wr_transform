@@ -17,5 +17,6 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-  "scipy"
+  "scipy",
+  "ecg_models @ git+https://github.com/sfcaracciolo/ecg_models.git"
 ]
