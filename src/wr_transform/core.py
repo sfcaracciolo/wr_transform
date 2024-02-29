@@ -20,7 +20,7 @@ class TransformParameters(TypedDict):
         return b/m
     
     @staticmethod
-    def kP(p1=.9, p2=.1):
+    def kP(p1=.95, p2=.05):
         z = lambda x: np.sqrt(-np.log(x))
         f = lambda x: np.exp(- x**2 )
         b, m = TransformParameters.linreg(f, (z(p1), z(p2)))
@@ -72,7 +72,8 @@ class TransformModel:
 
     def g(self, θt, x0):
         if np.allclose(x0, 0.): return x0
-        f = lambda x: self.f(θt[::2], self.join(x, θt, type='features')) - x0
+        θ = lambda x: self.join(x, θt, type='features')
+        f = lambda x: self.f(θt[::2], θ(x)) - x0
         return sp.optimize.broyden1(f, x0)
 
     def split(self, v: np.ndarray, type: Literal['features', 'fiducials', 'measurements']):
